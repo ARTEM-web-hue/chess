@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Анонимный чат</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f9f9f9;
+    }
+    #messages {
+      height: 70vh;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+      background: white;
+      margin-bottom: 10px;
+    }
+    #input {
+      width: 80%;
+      padding: 10px;
+      font-size: 16px;
+    }
+    #send {
+      width: 18%;
+      padding: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Анонимный чат — все видят всё</h2>
+  <div id="messages"></div>
+  <input id="input" placeholder="Напиши что-нибудь..." maxlength="200">
+  <button id="send">Отправить</button>
+
+  <script>
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const messages = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+
+    ws.onmessage = (event) => {
+      const div = document.createElement('div');
+      div.textContent = event.data;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    sendBtn.onclick = () => send();
+    input.onkeypress = (e) => { if (e.key === 'Enter') send(); };
+
+    function send() {
+      if (input.value.trim()) {
+        ws.send(input.value.trim());
+        input.value = '';
+      }
+    }
+  </script>
+</body>
+</html>
