@@ -63,6 +63,21 @@
   };
 
   function sendText() {
+      if (author === "Гость") {
+    const newName = prompt("Пожалуйста, укажи своё имя:", "");
+    if (newName && newName.trim()) {
+      author = newName.trim();
+      localStorage.setItem('author', author);
+    } else {
+      return; // Отмена отправки, если имя не введено
+    }
+  }
+  const text = input.value.trim();
+  if (text) {
+    ws.send(`${author}|${text}`);
+    input.value = '';
+  }
+}
     const text = input.value.trim();
     if (text) {
       ws.send(`${author}|${text}`);
