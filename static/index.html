@@ -68,13 +68,25 @@
       }
     }
 
-    function linkify(text) {
-      return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '<')
-        .replace(/>/g, '>')
-        .replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
-    }
+function linkify(text) {
+  // Экранируем HTML
+  let safe = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '<')
+    .replace(/>/g, '>');
+
+  // Заменяем ссылки на <a>
+  safe = safe.replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => 
+    `<a href="${url}" target="_blank">${url}</a>`
+  );
+
+  // Заменяем base64-картинки на <img>
+  safe = safe.replace(/(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)/g, img =>
+    `<img src="${img}" alt="image" style="max-width:100%; max-height:300px; border-radius:4px; margin-top:6px;">`
+  );
+
+  return safe;
+}
   </script>
 </body>
 </html>
