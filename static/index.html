@@ -8,19 +8,48 @@
       margin: 0;
       height: 100vh;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-family: sans-serif;
-      background: #f5f5f5;
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
     }
     #status {
       font-size: 24px;
       color: #555;
+      margin-bottom: 20px;
     }
     #board {
       display: none;
       width: min(90vw, 90vh);
       max-width: 600px;
+      aspect-ratio: 1 / 1;
+      border: 2px solid #333;
+    }
+    .row {
+      display: flex;
+      height: 12.5%;
+    }
+    .square {
+      width: 12.5%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: min(4vw, 5vh);
+      cursor: pointer;
+      user-select: none;
+    }
+    .light { background: #f0d9b5; }
+    .dark  { background: #b58863; }
+    .selected { outline: 4px solid #0088cc; }
+    .legal { position: relative; }
+    .legal::after {
+      content: "";
+      position: absolute;
+      width: 25%;
+      height: 25%;
+      background: rgba(0,128,0,0.5);
+      border-radius: 50%;
     }
   </style>
 </head>
@@ -28,39 +57,116 @@
   <div id="status">Подбираем соперника…</div>
   <div id="board"></div>
 
-  <!-- Порядок важен! -->
-  <script src="https://cdn.jsdelivr.net/npm/chess@0.10.2/dist/chess.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
-
   <script>
-    let board = null;
+    let myColor = null; // 'white' or 'black'
+    let boardState = null; // массив 8x8
+    let selected = null;
     let gameOver = false;
     const ws = new WebSocket(`wss://${window.location.host}/ws`);
+
+    // Unicode фигуры
+    const pieces = {
+      'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+      'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+    };
+
+    function fenToBoard(fen) {
+      const board = Array(8).fill().map(() => Array(8).fill(null));
+      const rows = fen.split(' ')[0].split('/');
+      for (let r = 0; r < 8; r++) {
+        let col = 0;
+        for (let char of rows[r]) {
+          if (!isNaN(char)) {
+            col += parseInt(char);
+          } else {
+            board[r][col] = char;
+            col++;
+          }
+        }
+      }
+      return board;
+    }
+
+    function renderBoard() {
+      const boardEl = document.getElementById('board');
+      boardEl.innerHTML = '';
+      const isWhitePerspective = (myColor === 'white');
+
+      for (let r = 0; r < 8; r++) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'row';
+        for (let c = 0; c < 8; c++) {
+          const actualR = isWhitePerspective ? r : 7 - r;
+          const actualC = isWhitePerspective ? c : 7 - c;
+          const piece = boardState[actualR][actualC];
+          const squareEl = document.createElement('div');
+          squareEl.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+          squareEl.dataset.row = r;
+          squareEl.dataset.col = c;
+
+          if (piece) {
+            squareEl.textContent = pieces[piece] || '';
+          }
+
+          if (selected && selected.row === r && selected.col === c) {
+            squareEl.classList.add('selected');
+          }
+
+          squareEl.onclick = () => handleSquareClick(r, c);
+          rowEl.appendChild(squareEl);
+        }
+        boardEl.appendChild(rowEl);
+      }
+    }
+
+    function handleSquareClick(r, c) {
+      if (gameOver || !myColor) return;
+
+      const isWhitePerspective = (myColor === 'white');
+      const actualR = isWhitePerspective ? r : 7 - r;
+      const actualC = isWhitePerspective ? c : 7 - c;
+      const piece = boardState[actualR][actualC];
+
+      // Если клик на свою фигуру — выбираем
+      if (piece && 
+         ((myColor === 'white' && piece === piece.toUpperCase()) ||
+          (myColor === 'black' && piece === piece.toLowerCase()))) {
+        selected = { row: r, col: c };
+        renderBoard();
+        return;
+      }
+
+      // Если есть выделение — пробуем сходить
+      if (selected) {
+        const fromR = isWhitePerspective ? selected.row : 7 - selected.row;
+        const fromC = isWhitePerspective ? selected.col : 7 - selected.col;
+        const toR = actualR;
+        const toC = actualC;
+
+        const from = String.fromCharCode(97 + fromC) + (8 - fromR);
+        const to = String.fromCharCode(97 + toC) + (8 - toR);
+        const move = from + to;
+
+        ws.send(move);
+        selected = null;
+        renderBoard();
+      }
+    }
 
     ws.onmessage = (event) => {
       const msg = event.data;
 
       if (msg.startsWith("color:")) {
-        const color = msg.split(":")[1];
+        myColor = msg.split(":")[1];
         document.getElementById("status").style.display = "none";
-        document.getElementById("board").style.display = "block";
-
-        board = Chessboard('board', {
-          position: 'start',
-          draggable: true,
-          onDragStart: (source, piece) => {
-            if (gameOver) return false;
-            return (color === 'white') ? piece.startsWith('w') : piece.startsWith('b');
-          },
-          onDrop: (source, target) => {
-            ws.send(source + target);
-          }
-        });
+        document.getElementById("board").style.display = "grid";
+        boardState = fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+        renderBoard();
       }
-      else if (msg.startsWith("fen:") && board) {
+      else if (msg.startsWith("fen:")) {
         const fen = msg.split(":")[1];
-        board.position(fen);
+        boardState = fenToBoard(fen);
+        renderBoard();
       }
       else if (msg.startsWith("result:") || msg === "resign") {
         gameOver = true;
