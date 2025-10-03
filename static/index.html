@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Анонимный чат</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 0 auto; padding: 15px; background: #f9f9f9; }
+    #messages { height: 70vh; overflow-y: auto; border: 1px solid #ddd; padding: 12px; background: white; margin-bottom: 12px; line-height: 1.5; }
+    #input-area { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #input { flex: 1; min-width: 200px; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
+    #send { padding: 10px 16px; font-size: 16px; background: #1a73e8; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    #file { display: none; }
+    #upload-btn { padding: 10px; background: #34a853; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    img { max-width: 100%; max-height: 300px; margin-top: 6px; border-radius: 4px; }
+    a { color: #1a73e8; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h2>Анонимный чат</h2>
+  <div id="messages"></div>
+  <div id="input-area">
+    <input id="input" placeholder="Напиши сообщение или отправь картинку..." maxlength="500">
+    <input type="file" id="file" accept="image/*">
+    <button id="upload-btn" onclick="document.getElementById('file').click()">🖼️</button>
+    <button id="send">Отправить</button>
+  </div>
+
+  <script>
+    // Имя
+    let author = localStorage.getItem('author');
+    if (!author) {
+      author = prompt("Как тебя зовут?") || "Гость";
+      localStorage.setItem('author', author);
+    }
+
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const messages = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const fileInput = document.getElementById('file');
+
+    ws.onmessage = (event) => {
+      const div = document.createElement('div');
+      div.innerHTML = linkify(event.data);
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    document.getElementById('send').onclick = sendText;
+    input.onkeypress = (e) => { if (e.key === 'Enter') sendText(); };
+
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        ws.send(`${author}|${reader.result}`);
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+
+    function sendText() {
+      const text = input.value.trim();
+      if (text) {
+        ws.send(`${author}|${text}`);
+        input.value = '';
+      }
+    }
+
+    function linkify(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '<')
+        .replace(/>/g, '>')
+        .replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
+    }
+  </script>
+</body>
+</html>
