@@ -11,7 +11,7 @@
       justify-content: center;
       align-items: center;
       font-family: sans-serif;
-      background: #f0f0f0;
+      background: #f5f5f5;
     }
     #status {
       font-size: 24px;
@@ -28,8 +28,8 @@
   <div id="status">Подбираем соперника…</div>
   <div id="board"></div>
 
-  <!-- Загружаем библиотеки СИНХРОННО -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+  <!-- Порядок важен! -->
+  <script src="https://cdn.jsdelivr.net/npm/chess@0.10.2/dist/chess.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
 
@@ -46,18 +46,15 @@
         document.getElementById("status").style.display = "none";
         document.getElementById("board").style.display = "block";
 
-        // Создаём доску ТОЛЬКО после загрузки библиотек
         board = Chessboard('board', {
           position: 'start',
           draggable: true,
           onDragStart: (source, piece) => {
             if (gameOver) return false;
-            // Белые — 'w', чёрные — 'b'
             return (color === 'white') ? piece.startsWith('w') : piece.startsWith('b');
           },
           onDrop: (source, target) => {
-            const move = source + target;
-            ws.send(move);
+            ws.send(source + target);
           }
         });
       }
@@ -73,9 +70,7 @@
     };
 
     ws.onclose = () => {
-      if (!gameOver) {
-        alert("Соединение с сервером потеряно.");
-      }
+      if (!gameOver) alert("Соединение потеряно");
       location.reload();
     };
   </script>
