@@ -29,7 +29,6 @@
   </div>
 
 <script>
-  // Имя из localStorage
   let author = localStorage.getItem('author') || "Гость";
 
   const ws = new WebSocket(`wss://${location.host}/ws`);
@@ -63,21 +62,15 @@
   };
 
   function sendText() {
-      if (author === "Гость") {
-    const newName = prompt("Пожалуйста, укажи своё имя:", "");
-    if (newName && newName.trim()) {
-      author = newName.trim();
-      localStorage.setItem('author', author);
-    } else {
-      return; // Отмена отправки, если имя не введено
+    if (author === "Гость") {
+      const newName = prompt("Пожалуйста, укажи своё имя:", "");
+      if (newName && newName.trim()) {
+        author = newName.trim();
+        localStorage.setItem('author', author);
+      } else {
+        return;
+      }
     }
-  }
-  const text = input.value.trim();
-  if (text) {
-    ws.send(`${author}|${text}`);
-    input.value = '';
-  }
-}
     const text = input.value.trim();
     if (text) {
       ws.send(`${author}|${text}`);
@@ -99,7 +92,6 @@
     return safe;
   }
 
-  // Смена имени по Ctrl+1 / Cmd+1
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === '1') {
       e.preventDefault();
@@ -107,14 +99,14 @@
       if (newName && newName.trim()) {
         author = newName.trim();
         localStorage.setItem('author', author);
-        // Опционально: отправить уведомление в чат
         ws.send(`${author}|изменил(а) имя`);
       }
     }
   });
+
   if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js');
-}
+    navigator.serviceWorker.register('/sw.js');
+  }
 </script>
 </body>
 </html>
