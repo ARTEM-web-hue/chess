@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Quick Chess</title>
+  <style>
+    body { margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center; font-family: sans-serif; }
+    #status { font-size: 24px; color: #555; }
+    #board { display: none; width: min(90vw, 90vh); max-width: 600px; }
+  </style>
+</head>
+<body>
+  <div id="status">Подбираем соперника…</div>
+  <div id="board"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+
+  <script>
+    let board = null;
+    const ws = new WebSocket(`wss://${window.location.host}/ws`);
+
+    ws.onmessage = (event) => {
+      const msg = event.data;
+      if (msg.startsWith("color:")) {
+        const color = msg.split(":")[1];
+        document.getElementById("status").style.display = "none";
+        document.getElementById("board").style.display = "block";
+        board = Chessboard('board', {
+          position: 'start',
+          draggable: true,
+          onDragStart: (source, piece) => {
+            if (gameOver) return false;
+            return (color === 'white' ? piece.search(/^w/) : piece.search(/^b/));
+          },
+          onDrop: (source, target) => {
+            const move = source + target;
+            ws.send(move);
+          }
+        });
+      } else if (msg.startsWith("fen:")) {
+        const fen = msg.split(":")[1];
+        board.position(fen);
+      } else if (msg === "status:waiting") {
+        // уже показываем "Подбираем..."
+      } else if (msg.startsWith("result:") || msg === "resign") {
+        alert("Игра окончена!");
+        location.reload();
+      }
+    };
+
+    let gameOver = false;
+    ws.onclose = () => {
+      if (!gameOver) alert("Соединение потеряно");
+      location.reload();
+    };
+  </script>
+</body>
+</html>
