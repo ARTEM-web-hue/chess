@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8">
   <title>Quick Chess</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
       margin: 0;
-      height: 100vh;
+      padding: 0;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -18,12 +20,14 @@
       font-size: 24px;
       color: #555;
       margin-bottom: 20px;
+      text-align: center;
     }
     #board {
       display: none;
-      width: min(90vw, 90vh);
+      width: 95vw;
       max-width: 600px;
-      aspect-ratio: 1 / 1;
+      height: 95vw;
+      max-height: 600px;
       border: 2px solid #333;
     }
     .row {
@@ -35,22 +39,14 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: min(4vw, 5vh);
+      font-size: calc(95vw / 16);
+      max-font-size: 40px;
       cursor: pointer;
       user-select: none;
     }
     .light { background: #f0d9b5; }
     .dark  { background: #b58863; }
     .selected { outline: 4px solid #0088cc; }
-    .legal { position: relative; }
-    .legal::after {
-      content: "";
-      position: absolute;
-      width: 25%;
-      height: 25%;
-      background: rgba(0,128,0,0.5);
-      border-radius: 50%;
-    }
   </style>
 </head>
 <body>
@@ -58,13 +54,12 @@
   <div id="board"></div>
 
   <script>
-    let myColor = null; // 'white' or 'black'
-    let boardState = null; // массив 8x8
+    let myColor = null;
+    let boardState = null;
     let selected = null;
     let gameOver = false;
     const ws = new WebSocket(`wss://${window.location.host}/ws`);
 
-    // Unicode фигуры
     const pieces = {
       'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
       'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
@@ -76,7 +71,7 @@
       for (let r = 0; r < 8; r++) {
         let col = 0;
         for (let char of rows[r]) {
-          if (!isNaN(char)) {
+          if (!isNaN(char) && char !== '0') {
             col += parseInt(char);
           } else {
             board[r][col] = char;
@@ -90,64 +85,72 @@
     function renderBoard() {
       const boardEl = document.getElementById('board');
       boardEl.innerHTML = '';
-      const isWhitePerspective = (myColor === 'white');
 
-      for (let r = 0; r < 8; r++) {
+      // Определяем, с чьей стороны смотрим
+      const isWhiteView = (myColor === 'white');
+
+      for (let visualRow = 0; visualRow < 8; visualRow++) {
         const rowEl = document.createElement('div');
         rowEl.className = 'row';
-        for (let c = 0; c < 8; c++) {
-          const actualR = isWhitePerspective ? r : 7 - r;
-          const actualC = isWhitePerspective ? c : 7 - c;
-          const piece = boardState[actualR][actualC];
+
+        for (let visualCol = 0; visualCol < 8; visualCol++) {
+          // Преобразуем визуальные координаты в реальные (внутренние)
+          const realRow = isWhiteView ? visualRow : 7 - visualRow;
+          const realCol = isWhiteView ? visualCol : 7 - visualCol;
+
+          const piece = boardState[realRow][realCol];
           const squareEl = document.createElement('div');
-          squareEl.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
-          squareEl.dataset.row = r;
-          squareEl.dataset.col = c;
+          squareEl.className = `square ${(visualRow + visualCol) % 2 === 0 ? 'light' : 'dark'}`;
+          squareEl.dataset.vrow = visualRow;
+          squareEl.dataset.vcol = visualCol;
 
           if (piece) {
             squareEl.textContent = pieces[piece] || '';
           }
 
-          if (selected && selected.row === r && selected.col === c) {
+          if (selected && selected.vrow === visualRow && selected.vcol === visualCol) {
             squareEl.classList.add('selected');
           }
 
-          squareEl.onclick = () => handleSquareClick(r, c);
+          squareEl.onclick = () => handleSquareClick(visualRow, visualCol);
           rowEl.appendChild(squareEl);
         }
         boardEl.appendChild(rowEl);
       }
     }
 
-    function handleSquareClick(r, c) {
-      if (gameOver || !myColor) return;
+    function handleSquareClick(vrow, vcol) {
+      if (gameOver || !myColor || !boardState) return;
 
-      const isWhitePerspective = (myColor === 'white');
-      const actualR = isWhitePerspective ? r : 7 - r;
-      const actualC = isWhitePerspective ? c : 7 - c;
-      const piece = boardState[actualR][actualC];
+      const isWhiteView = (myColor === 'white');
+      const realRow = isWhiteView ? vrow : 7 - vrow;
+      const realCol = isWhiteView ? vcol : 7 - vcol;
+      const piece = boardState[realRow][realCol];
 
-      // Если клик на свою фигуру — выбираем
-      if (piece && 
-         ((myColor === 'white' && piece === piece.toUpperCase()) ||
-          (myColor === 'black' && piece === piece.toLowerCase()))) {
-        selected = { row: r, col: c };
+      const isWhitePiece = piece && piece === piece.toUpperCase();
+      const isBlackPiece = piece && piece === piece.toLowerCase();
+
+      const isMyPiece = (myColor === 'white' && isWhitePiece) || (myColor === 'black' && isBlackPiece);
+
+      if (isMyPiece) {
+        selected = { vrow, vcol };
         renderBoard();
         return;
       }
 
-      // Если есть выделение — пробуем сходить
       if (selected) {
-        const fromR = isWhitePerspective ? selected.row : 7 - selected.row;
-        const fromC = isWhitePerspective ? selected.col : 7 - selected.col;
-        const toR = actualR;
-        const toC = actualC;
+        // Отправляем ход в формате UCI: e2e4
+        const fromRealRow = isWhiteView ? selected.vrow : 7 - selected.vrow;
+        const fromRealCol = isWhiteView ? selected.vcol : 7 - selected.vcol;
 
-        const from = String.fromCharCode(97 + fromC) + (8 - fromR);
-        const to = String.fromCharCode(97 + toC) + (8 - toR);
-        const move = from + to;
+        const fromFile = String.fromCharCode(97 + fromRealCol);
+        const fromRank = 8 - fromRealRow;
+        const toFile = String.fromCharCode(97 + realCol);
+        const toRank = 8 - realRow;
 
-        ws.send(move);
+        const uciMove = fromFile + fromRank + toFile + toRank;
+        ws.send(uciMove);
+
         selected = null;
         renderBoard();
       }
@@ -159,13 +162,13 @@
       if (msg.startsWith("color:")) {
         myColor = msg.split(":")[1];
         document.getElementById("status").style.display = "none";
-        document.getElementById("board").style.display = "grid";
-        boardState = fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+        document.getElementById("board").style.display = "block";
+        boardState = fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         renderBoard();
       }
       else if (msg.startsWith("fen:")) {
-        const fen = msg.split(":")[1];
-        boardState = fenToBoard(fen);
+        const fullFen = msg.split(":")[1];
+        boardState = fenToBoard(fullFen);
         renderBoard();
       }
       else if (msg.startsWith("result:") || msg === "resign") {
