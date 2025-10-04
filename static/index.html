@@ -88,40 +88,42 @@
     }
   }
 
-  function linkify(text) {
-    // Сначала экранируем ВСЕ HTML символы
+function linkify(text) {
+    // Если текст уже содержит HTML теги от сервера, не экранируем его
+    if (text.includes('<b>') && text.includes('</b>')) {
+        // Это сообщение от сервера с уже готовым HTML
+        // Только добавляем обработку ссылок и картинок к существующему HTML
+        let processed = text;
+        
+        // Обрабатываем ссылки (но не ломаем существующие теги)
+        processed = processed.replace(/(https?:\/\/[^\s<>&]+)/g, url => 
+            `<a href="${url}" target="_blank">${url}</a>`
+        );
+        
+        // Обрабатываем base64 изображения
+        processed = processed.replace(/(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)/g, img =>
+            `<img src="${img}" alt="image" style="max-width:100%; max-height:300px; border-radius:4px; margin-top:6px;">`
+        );
+        
+        return processed;
+    }
+    
+    // Иначе это обычный текст - экранируем и обрабатываем
     let safe = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+        .replace(/>/g, '&gt;');
     
-    // Затем преобразуем ссылки обратно в HTML
     safe = safe.replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => 
         `<a href="${url}" target="_blank">${url}</a>`
     );
     
-    // И преобразуем base64 изображения
     safe = safe.replace(/(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)/g, img =>
         `<img src="${img}" alt="image" style="max-width:100%; max-height:300px; border-radius:4px; margin-top:6px;">`
     );
     
     return safe;
 }
-
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === '1') {
-      e.preventDefault();
-      const newName = prompt("Как тебя теперь зовут?", author);
-      if (newName && newName.trim()) {
-        author = newName.trim();
-        localStorage.setItem('author', author);
-        ws.send(`${author}|изменил(а) имя`);
-      }
-    }
-  });
-
   // === Push подписка ===
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
