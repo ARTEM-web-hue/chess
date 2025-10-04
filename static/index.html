@@ -89,18 +89,26 @@
   }
 
   function linkify(text) {
+    // Сначала экранируем ВСЕ HTML символы
     let safe = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    
+    // Затем преобразуем ссылки обратно в HTML
     safe = safe.replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => 
-      `<a href="${url}" target="_blank">${url}</a>`
+        `<a href="${url}" target="_blank">${url}</a>`
     );
+    
+    // И преобразуем base64 изображения
     safe = safe.replace(/(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)/g, img =>
-      `<img src="${img}" alt="image" style="max-width:100%; max-height:300px; border-radius:4px; margin-top:6px;">`
+        `<img src="${img}" alt="image" style="max-width:100%; max-height:300px; border-radius:4px; margin-top:6px;">`
     );
+    
     return safe;
-  }
+}
 
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === '1') {
