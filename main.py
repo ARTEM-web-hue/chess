@@ -1,3 +1,5 @@
+from datetime import datetime
+from fastapi import Response
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -99,7 +101,22 @@ def send_push_notification(author: str, content: str):
             print("Push failed:", e)
             if e.response and e.response.status_code == 410:
                 push_subscriptions.remove(sub)
+# Добавь эти строки в конец роутов, перед WebSocket обработчиком
 
+@app.head("/")
+async def head_root():
+    """Обработка HEAD запросов для UptimeRobot"""
+    return Response()
+
+@app.get("/health")
+async def health_check():
+    """Эндпоинт для проверки здоровья сервера"""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+@app.head("/health")
+async def head_health():
+    """HEAD для health check"""
+    return Response()
 # === WebSocket ===
 
 @app.websocket("/ws")
