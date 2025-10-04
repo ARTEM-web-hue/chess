@@ -1,35 +1,61 @@
 self.addEventListener('push', function(event) {
-    if (!event.data) return;
+    console.log('Push event received:', event);
     
-    const data = event.data.json();
-    const options = {
-        body: data.body,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        vibrate: [100, 50, 100],
-        data: {
-            url: '/'  // URL для открытия при клике
-        }
-    };
+    if (!event.data) {
+        console.log('No data in push event');
+        return;
+    }
     
-    event.waitUntil(
-        self.registration.showNotification(data.title, options)
-    );
+    try {
+        const data = event.data.json();
+        console.log('Push data:', data);
+        
+        const options = {
+            body: data.body,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            vibrate: [100, 50, 100],
+            data: {
+                url: '/'
+            },
+            actions: [
+                {
+                    action: 'open',
+                    title: 'Открыть чат'
+                }
+            ]
+        };
+        
+        event.waitUntil(
+            self.registration.showNotification(data.title, options)
+        );
+    } catch (error) {
+        console.error('Error processing push:', error);
+    }
 });
 
 self.addEventListener('notificationclick', function(event) {
+    console.log('Notification clicked');
     event.notification.close();
+    
     event.waitUntil(
-        clients.matchAll({type: 'window'}).then(windowClients => {
-            // Открываем/фокусируем окно
+        clients.matchAll({type: 'window', includeUncontrolled: true}).then(windowClients => {
+            // Проверяем, есть ли уже открытое окно
             for (let client of windowClients) {
-                if (client.url === '/' && 'focus' in client) {
+                if (client.url.includes(location.origin) && 'focus' in client) {
                     return client.focus();
                 }
             }
+            // Если нет открытого окна - открываем новое
             if (clients.openWindow) {
                 return clients.openWindow('/');
             }
         })
     );
+});
+
+// Важно: добавить активацию Service Worker
+self.addEventListener('activate', function(event) {
+    console.log('Service Worker activated');
+    event.waitUntil(self.clients.claim());
 });
