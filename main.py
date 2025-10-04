@@ -20,8 +20,8 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
 
 # Глобальные хранилища
-connections = []  # WebSocket-соединения
-push_subscriptions = []  # Push-подписки (в реальном проекте — в БД!)
+connections = []
+push_subscriptions = []
 
 MESSAGES_URL = f"{SUPABASE_URL}/rest/v1/messages"
 
@@ -57,14 +57,14 @@ async def icon512():
 @app.post("/subscribe")
 async def subscribe(request: Request):
     subscription = await request.json()
-    if subscription not in push_subscriptions:
+    endpoint = subscription.get("endpoint")
+    if endpoint and not any(sub.get("endpoint") == endpoint for sub in push_subscriptions):
         push_subscriptions.append(subscription)
     return JSONResponse({"status": "ok"})
 
-# === Вспомогательная функция: отправка push ===
+# === Push ===
 
 def send_push_notification(author: str, content: str):
-    """Отправляет push всем подписанным устройствам (даже при закрытой вкладке)"""
     message = f"{author}: {content[:80]}{'...' if len(content) > 80 else ''}"
     payload = json.dumps({
         "title": "Новое сообщение",
@@ -77,7 +77,7 @@ def send_push_notification(author: str, content: str):
                 subscription_info=sub,
                 data=payload,
                 vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": "mailto:admin@yourdomain.com"}
+                vapid_claims={"sub": "mailto:admin@onrender.com"}
             )
         except WebPushException as e:
             print("Push failed:", e)
@@ -91,7 +91,7 @@ async def ws(websocket: WebSocket):
     await websocket.accept()
     connections.append(websocket)
 
-    # Загрузка старых сообщений
+    # Загрузка истории — ПОМЕЧАЕМ как HISTORY
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
@@ -101,11 +101,11 @@ async def ws(websocket: WebSocket):
             )
             if r.status_code == 200:
                 for msg in r.json():
-                    await websocket.send_text(f'<b>{msg["author"]}</b>: {msg["content"]}')
+                    await websocket.send_text(f'HISTORY:<b>{msg["author"]}</b>: {msg["content"]}')
     except Exception as e:
         print("Load error:", e)
 
-    # Основной цикл приёма сообщений
+    # Новые сообщения
     try:
         while True:
             data = await websocket.receive_text()
@@ -113,10 +113,9 @@ async def ws(websocket: WebSocket):
                 continue
             author, content = data.split("|", 1)
 
-            # 🔔 Отправляем push-уведомление ВСЕМ подписанным (даже если вкладка закрыта!)
             send_push_notification(author, content)
 
-            # Сохраняем в Supabase
+            # Сохраняем в БД
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.post(
@@ -127,7 +126,7 @@ async def ws(websocket: WebSocket):
             except Exception as e:
                 print("Save error:", e)
 
-            # Рассылаем по WebSocket всем подключённым
+            # Рассылаем ВСЕМ (без HISTORY)
             for conn in connections[:]:
                 try:
                     await conn.send_text(f'<b>{author}</b>: {content}')
