@@ -36,21 +36,6 @@
   const input = document.getElementById('input');
   const fileInput = document.getElementById('file');
 
-  async function requestNotificationPermission() {
-    if (window.Notification && Notification.permission === "default") {
-      await Notification.requestPermission();
-    }
-  }
-
-  function showNotification(messageHtml) {
-    if (!document.hidden || Notification.permission !== "granted") return;
-    const match = messageHtml.match(/<b>([^<]+)<\/b>/);
-    const authorName = match ? match[1] : "Кто-то";
-    const plainText = messageHtml.replace(/<[^>]*>/g, "").trim();
-    const body = plainText.length > 100 ? plainText.substring(0, 100) + "…" : plainText;
-    new Notification(`${authorName} написал(а):`, { body, icon: "/icon-192.png" });
-  }
-
   ws.onmessage = (event) => {
     const data = event.data;
     let div, cleanData;
@@ -62,7 +47,6 @@
     } else {
       div = document.createElement('div');
       div.innerHTML = linkify(data);
-      showNotification(data); // только для новых сообщений
     }
 
     messages.appendChild(div);
@@ -107,8 +91,8 @@
   function linkify(text) {
     let safe = text
       .replace(/&/g, '&amp;')
-      .replace(/</g, '<')
-      .replace(/>/g, '>');
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     safe = safe.replace(/(https?:\/\/[^\s<>"{}|\\^`]+)/g, url => 
       `<a href="${url}" target="_blank">${url}</a>`
     );
@@ -130,7 +114,7 @@
     }
   });
 
-  // === Push ===
+  // === Push подписка ===
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding)
@@ -163,7 +147,9 @@
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').then(() => {
-      requestNotificationPermission();
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
       subscribeToPush();
     });
   }
