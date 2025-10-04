@@ -29,6 +29,7 @@ headers = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
+    "Prefer": "return=representation"  # чтобы получить ответ после POST
 }
 
 # === Роуты ===
@@ -91,7 +92,7 @@ async def ws(websocket: WebSocket):
     await websocket.accept()
     connections.append(websocket)
 
-    # Загрузка истории — ПОМЕЧАЕМ как HISTORY
+    # Загрузка истории
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
@@ -101,38 +102,63 @@ async def ws(websocket: WebSocket):
             )
             if r.status_code == 200:
                 for msg in r.json():
-                    await websocket.send_text(f'HISTORY:<b>{msg["author"]}</b>: {msg["content"]}')
+                    await websocket.send_text(f'<b>{msg["author"]}</b>: {msg["content"]}')
     except Exception as e:
         print("Load error:", e)
 
-    # Новые сообщения
     try:
         while True:
             data = await websocket.receive_text()
-            if "|" not in data:
+            if "|" not in 
                 continue
             author, content = data.split("|", 1)
 
-            send_push_notification(author, content)
-
-            # Сохраняем в БД
+            msg_id = None
+            # 1. Сохраняем сообщение с notified=false
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(
+                    resp = await client.post(
                         MESSAGES_URL,
                         headers=headers,
-                        json={"author": author, "content": content}
+                        json={"author": author, "content": content, "notified": False}
                     )
+                    if resp.status_code == 201:
+                        created = resp.json()
+                        if created and isinstance(created, list):
+                            msg_id = created[0].get("id")
             except Exception as e:
                 print("Save error:", e)
 
-            # Рассылаем ВСЕМ (без HISTORY)
+            # 2. Рассылаем по WebSocket
+            full_msg = f'<b>{author}</b>: {content}'
             for conn in connections[:]:
                 try:
-                    await conn.send_text(f'<b>{author}</b>: {content}')
+                    await conn.send_text(full_msg)
                 except:
                     if conn in connections:
                         connections.remove(conn)
+
+            # 3. Отправляем push ТОЛЬКО если сообщение новое и ещё не уведомляли
+            if msg_id is not None:
+                try:
+                    # Проверим, не уведомляли ли уже (на всякий случай)
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        check = await client.get(
+                            f"{MESSAGES_URL}?id=eq.{msg_id}&select=notified",
+                            headers=headers
+                        )
+                        if check.status_code == 200 and check.json():
+                            notified = check.json()[0].get("notified", True)
+                            if not notified:
+                                send_push_notification(author, content)
+                                # Обновляем notified = true
+                                await client.patch(
+                                    f"{MESSAGES_URL}?id=eq.{msg_id}",
+                                    headers={**headers, "Prefer": "return=minimal"},
+                                    json={"notified": True}
+                                )
+                except Exception as e:
+                    print("Notify/update error:", e)
 
     except WebSocketDisconnect:
         if websocket in connections:
