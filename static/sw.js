@@ -1,3 +1,5 @@
+// static/sw.js
+
 self.addEventListener('push', (event) => {
   let data = { title: 'Новое сообщение', body: 'В чате новое сообщение!' };
   if (event.data) {
@@ -13,7 +15,7 @@ self.addEventListener('push', (event) => {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     vibrate: [100, 50, 100],
-     { url: '/' }
+    data: { url: '/' }  // ✅ Исправлено: добавлено имя свойства "data"
   };
 
   event.waitUntil(
