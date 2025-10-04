@@ -2,15 +2,43 @@ import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse
 import httpx
-
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pywebpush import webpush, WebPushException
+import json
 app = FastAPI()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# VAPID для Push-уведомлений
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
+if not VAPID_PRIVATE_KEY:
+    raise RuntimeError("VAPID_PRIVATE_KEY must be set in environment variables")
 
+# Хранилище push-подписок (в памяти; в продакшене — в БД)
+push_subscriptions = []
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
+def send_push_notification(author: str, content: str):
+    """Отправляет push всем подписанным устройствам"""
+    message = f"{author}: {content[:80]}{'...' if len(content) > 80 else ''}"
+    payload = json.dumps({
+        "title": "Новое сообщение",
+        "body": message
+    })
 
+    for sub in push_subscriptions[:]:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": "mailto:admin@yourdomain.com"}
+            )
+        except WebPushException as e:
+            print("Push failed:", e)
+            if e.response and e.response.status_code == 410:
+                push_subscriptions.remove(sub)
 MESSAGES_URL = f"{SUPABASE_URL}/rest/v1/messages"
 
 headers = {
@@ -19,30 +47,19 @@ headers = {
     "Content-Type": "application/json",
 }
 
-connections = []
 
-@app.get("/")
-async def get():
-    with open("static/index.html") as f:
-        return HTMLResponse(f.read())
-
-# Новые маршруты для PWA
-@app.get("/manifest.json")
-async def manifest():
-    return FileResponse("static/manifest.json")
-
-@app.get("/sw.js")
-async def sw():
-    return FileResponse("static/sw.js")
-
-@app.get("/icon-192.png")
 async def icon192():
     return FileResponse("static/icon-192.png")
 
 @app.get("/icon-512.png")
 async def icon512():
     return FileResponse("static/icon-512.png")
-
+@app.post("/subscribe")
+async def subscribe(request: Request):
+    subscription = await request.json()
+    if subscription not in push_subscriptions:
+        push_subscriptions.append(subscription)
+    return JSONResponse({"status": "ok"})
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     await websocket.accept()
@@ -67,6 +84,8 @@ async def ws(websocket: WebSocket):
             if "|" not in data:
                 continue
             author, content = data.split("|", 1)
+            # Отправляем push-уведомление (работает даже при закрытой вкладке!)
+send_push_notification(author, content)
 
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
