@@ -106,60 +106,60 @@ async def ws(websocket: WebSocket):
     except Exception as e:
         print("Load error:", e)
 
-try:
-    while True:
-        data = await websocket.receive_text()
-        if "|" not in data:  # Исправлено: добавлено data
-            continue
-        author, content = data.split("|", 1)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if "|" not in data:
+                continue
+            author, content = data.split("|", 1)
 
-        msg_id = None
-        # 1. Сохраняем сообщение с notified=false
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    MESSAGES_URL,
-                    headers=headers,
-                    json={"author": author, "content": content, "notified": False}
-                )
-                if resp.status_code == 201:
-                    created = resp.json()
-                    if created and isinstance(created, list):
-                        msg_id = created[0].get("id")
-        except Exception as e:
-            print("Save error:", e)
-
-        # 2. Рассылаем по WebSocket
-        full_msg = f'<b>{author}</b>: {content}'
-        for conn in connections[:]:
+            msg_id = None
+            # 1. Сохраняем сообщение с notified=false
             try:
-                await conn.send_text(full_msg)
-            except:
-                if conn in connections:
-                    connections.remove(conn)
-
-        # 3. Отправляем push ТОЛЬКО если сообщение новое и ещё не уведомляли
-        if msg_id is not None:
-            try:
-                # Проверим, не уведомляли ли уже (на всякий случай)
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    check = await client.get(
-                        f"{MESSAGES_URL}?id=eq.{msg_id}&select=notified",
-                        headers=headers
+                    resp = await client.post(
+                        MESSAGES_URL,
+                        headers=headers,
+                        json={"author": author, "content": content, "notified": False}
                     )
-                    if check.status_code == 200 and check.json():
-                        notified = check.json()[0].get("notified", True)
-                        if not notified:
-                            send_push_notification(author, content)
-                            # Обновляем notified = true
-                            await client.patch(
-                                f"{MESSAGES_URL}?id=eq.{msg_id}",
-                                headers={**headers, "Prefer": "return=minimal"},
-                                json={"notified": True}
-                            )
+                    if resp.status_code == 201:
+                        created = resp.json()
+                        if created and isinstance(created, list):
+                            msg_id = created[0].get("id")
             except Exception as e:
-                print("Notify/update error:", e)
+                print("Save error:", e)
 
-except WebSocketDisconnect:
-    if websocket in connections:
-        connections.remove(websocket)
+            # 2. Рассылаем по WebSocket
+            full_msg = f'<b>{author}</b>: {content}'
+            for conn in connections[:]:
+                try:
+                    await conn.send_text(full_msg)
+                except:
+                    if conn in connections:
+                        connections.remove(conn)
+
+            # 3. Отправляем push ТОЛЬКО если сообщение новое и ещё не уведомляли
+            if msg_id is not None:
+                try:
+                    # Проверим, не уведомляли ли уже (на всякий случай)
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        check = await client.get(
+                            f"{MESSAGES_URL}?id=eq.{msg_id}&select=notified",
+                            headers=headers
+                        )
+                        if check.status_code == 200 and check.json():
+                            notified = check.json()[0].get("notified", True)
+                            if not notified:
+                                send_push_notification(author, content)
+                                # Обновляем notified = true
+                                await client.patch(
+                                    f"{MESSAGES_URL}?id=eq.{msg_id}",
+                                    headers={**headers, "Prefer": "return=minimal"},
+                                    json={"notified": True}
+                                )
+                except Exception as e:
+                    print("Notify/update error:", e)
+
+    except WebSocketDisconnect:
+        if websocket in connections:
+            connections.remove(websocket)
