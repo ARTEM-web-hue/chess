@@ -36,7 +36,6 @@
   const input = document.getElementById('input');
   const fileInput = document.getElementById('file');
 
-  // === УВЕДОМЛЕНИЯ ===
   async function requestNotificationPermission() {
     if (window.Notification && Notification.permission === "default") {
       await Notification.requestPermission();
@@ -45,26 +44,29 @@
 
   function showNotification(messageHtml) {
     if (!document.hidden || Notification.permission !== "granted") return;
-
     const match = messageHtml.match(/<b>([^<]+)<\/b>/);
     const authorName = match ? match[1] : "Кто-то";
-    // Убираем HTML-теги для тела уведомления
     const plainText = messageHtml.replace(/<[^>]*>/g, "").trim();
     const body = plainText.length > 100 ? plainText.substring(0, 100) + "…" : plainText;
-
-    new Notification(`${authorName} написал(а):`, {
-      body: body,
-      icon: "/icon-192.png"
-    });
+    new Notification(`${authorName} написал(а):`, { body, icon: "/icon-192.png" });
   }
 
   ws.onmessage = (event) => {
-    const div = document.createElement('div');
-    div.innerHTML = linkify(event.data);
+    const data = event.data;
+    let div, cleanData;
+
+    if (data.startsWith('HISTORY:')) {
+      cleanData = data.substring(8);
+      div = document.createElement('div');
+      div.innerHTML = linkify(cleanData);
+    } else {
+      div = document.createElement('div');
+      div.innerHTML = linkify(data);
+      showNotification(data); // только для новых сообщений
+    }
+
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
-
-    showNotification(event.data);
   };
 
   document.getElementById('send').onclick = sendText;
@@ -128,43 +130,43 @@
     }
   });
 
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
-}
-
-async function subscribeToPush() {
-  const registration = await navigator.serviceWorker.ready;
-  // 🔑 ВСТАВЬТЕ СЮДА ВАШ ПУБЛИЧНЫЙ КЛЮЧ!
-  const publicKey = "BFPo7qXHq_I9aj2uAxqbCv0s-36Iv2eIwR1BxB8num1mUtosCXclulA1YzgZBwMoMwBIdLWvV_MNQ0epb3NiHmY";
-
-  try {
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey)
-    });
-
-    await fetch('/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription)
-    });
-  } catch (err) {
-    console.log('Push subscription failed:', err);
+  // === Push ===
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
   }
-}
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(() => {
-    requestNotificationPermission(); // ваша существующая функция
-    subscribeToPush();
-  });
-}
-  
+  async function subscribeToPush() {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) return;
+
+    const publicKey = "BFPo7qXHq_I9aj2uAxqbCv0s-36Iv2eIwR1BxB8num1mUtosCXclulA1YzgZBwMoMwBIdLWvV_MNQ0epb3NiHmY";
+    try {
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+      await fetch('/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+    } catch (err) {
+      console.log('Push subscription failed:', err);
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(() => {
+      requestNotificationPermission();
+      subscribeToPush();
+    });
+  }
 </script>
 </body>
 </html>
