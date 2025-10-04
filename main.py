@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import httpx
 from pywebpush import webpush, WebPushException
 import json
+import importlib.util
 
 app = FastAPI()
 
@@ -33,6 +34,40 @@ headers = {
     "Content-Type": "application/json",
     "Prefer": "return=representation"  # чтобы получить ответ после POST
 }
+
+# === Система ботов ===
+bot_response = None
+
+def load_bot():
+    """Загружает бота из папки /bot/bot.py"""
+    global bot_response
+    try:
+        bot_path = "bot/bot.py"
+        if not os.path.exists(bot_path):
+            print("❌ Файл бота не найден")
+            return None
+        
+        # Динамическая загрузка модуля
+        spec = importlib.util.spec_from_file_location("bot", bot_path)
+        bot_module = importlib.util.module_from_spec(spec)
+        
+        def otvet(text):
+            global bot_response
+            bot_response = text
+        
+        # Добавляем функцию otvet в модуль
+        bot_module.otvet = otvet
+        
+        spec.loader.exec_module(bot_module)
+        print("✅ Бот загружен")
+        return bot_module
+        
+    except Exception as e:
+        print(f"❌ Ошибка загрузки бота: {e}")
+        return None
+
+# Загружаем бота при старте
+bot_module = load_bot()
 
 # === Роуты ===
 
@@ -82,6 +117,7 @@ async def unsubscribe(request: Request):
     except Exception as e:
         print("Unsubscribe error:", e)
         return JSONResponse({"status": "error"}, status_code=400)
+
 def send_push_notification(author: str, content: str):
     message = f"{author}: {content[:80]}{'...' if len(content) > 80 else ''}"
     payload = json.dumps({
@@ -101,7 +137,6 @@ def send_push_notification(author: str, content: str):
             print("Push failed:", e)
             if e.response and e.response.status_code == 410:
                 push_subscriptions.remove(sub)
-# Добавь эти строки в конец роутов, перед WebSocket обработчиком
 
 @app.head("/")
 async def head_root():
@@ -117,6 +152,7 @@ async def health_check():
 async def head_health():
     """HEAD для health check"""
     return Response()
+
 # === WebSocket ===
 
 @app.websocket("/ws")
@@ -144,6 +180,51 @@ async def ws(websocket: WebSocket):
             if "|" not in data:
                 continue
             author, content = data.split("|", 1)
+
+            # === ОБРАБОТКА КОМАНД БОТА ===
+            global bot_response
+            bot_response = None
+            
+            if bot_module and content.startswith('/'):
+                command = content.strip()
+                
+                # Ищем функцию обработчика команды
+                for attr_name in dir(bot_module):
+                    if attr_name.startswith('comandOtvet-') and command in attr_name:
+                        try:
+                            # Вызываем функцию бота
+                            func = getattr(bot_module, attr_name)
+                            func()
+                            
+                            # Если бот ответил - отправляем ответ
+                            if bot_response:
+                                bot_msg = f'<b>🤖 Бот</b>: {bot_response}'
+                                
+                                # Отправляем ответ в чат
+                                for conn in connections[:]:
+                                    try:
+                                        await conn.send_text(bot_msg)
+                                    except:
+                                        if conn in connections:
+                                            connections.remove(conn)
+                                
+                                # Сохраняем в базу
+                                async with httpx.AsyncClient(timeout=10.0) as client:
+                                    await client.post(
+                                        MESSAGES_URL,
+                                        headers=headers,
+                                        json={
+                                            "author": "🤖 Бот", 
+                                            "content": bot_response,
+                                            "notified": True
+                                        }
+                                    )
+                                
+                                bot_response = None
+                                continue  # Пропускаем обычную обработку
+                                
+                        except Exception as e:
+                            print(f"❌ Ошибка выполнения команды {command}: {e}")
 
             msg_id = None
             # 1. Сохраняем сообщение с notified=false
