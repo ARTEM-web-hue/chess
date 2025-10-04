@@ -64,7 +64,22 @@ async def subscribe(request: Request):
     return JSONResponse({"status": "ok"})
 
 # === Push ===
-
+@app.delete("/subscribe")
+async def unsubscribe(request: Request):
+    try:
+        subscription = await request.json()
+        endpoint = subscription.get("endpoint")
+        
+        # Удаляем подписку из списка
+        global push_subscriptions
+        push_subscriptions = [sub for sub in push_subscriptions if sub.get("endpoint") != endpoint]
+        
+        print(f"Unsubscribed: {endpoint}")
+        return JSONResponse({"status": "unsubscribed"})
+        
+    except Exception as e:
+        print("Unsubscribe error:", e)
+        return JSONResponse({"status": "error"}, status_code=400)
 def send_push_notification(author: str, content: str):
     message = f"{author}: {content[:80]}{'...' if len(content) > 80 else ''}"
     payload = json.dumps({
